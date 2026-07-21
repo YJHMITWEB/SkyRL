@@ -837,8 +837,11 @@ class MegatronWorker:
         num_actions = log_probs.shape[1]
         reordered = torch.zeros((batch_size, num_actions), dtype=log_probs.dtype, device=log_probs.device)
 
+        # Padding microbatches are yielded FIRST (TokenBasedBatchIterator.__iter__), so
+        # real microbatch i's output chunk sits at offset num_padding_microbatches + i.
+        pad_mbs = getattr(microbatch_iterator, "num_padding_microbatches", 0)
         for mb_idx, original_indices in enumerate(microbatch_iterator._microbatches):
-            mb_log_probs = all_log_probs[mb_idx]
+            mb_log_probs = all_log_probs[pad_mbs + mb_idx]
             for sample_idx, original_idx in enumerate(original_indices):
                 reordered[original_idx] = mb_log_probs[sample_idx]
 

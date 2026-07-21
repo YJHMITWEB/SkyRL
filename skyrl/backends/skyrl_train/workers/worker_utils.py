@@ -366,11 +366,15 @@ class TokenBasedBatchIterator(BaseBatchIterator):
         return self._num_padding_microbatches
 
     def __iter__(self) -> Iterator[TrainingInputBatch]:
-        for microbatch_indices in self._microbatches:
-            yield self._create_microbatch_from_indices(microbatch_indices)
-
+        # Padding microbatches must not run LAST: Megatron's overlap_grad_reduce only
+        # issues bucket comms during the final microbatch's backward, and a purely-padding
+        # batch (loss_mask all zero) does not produce grads for every param, leaving
+        # buckets unissued (finish_grad_sync assertion).
         for _ in range(self._num_padding_microbatches):
             yield self._create_padding_microbatch()
+
+        for microbatch_indices in self._microbatches:
+            yield self._create_microbatch_from_indices(microbatch_indices)
 
     def reorder_and_combine_batches(self, batches: List[TensorBatch]) -> TensorBatch:
         """Reorder and combine output batches into a single batch with
@@ -383,7 +387,7 @@ class TokenBasedBatchIterator(BaseBatchIterator):
         Returns:
             A single reordered batch.
         """
-        non_padding_batches = batches[: len(batches) - self._num_padding_microbatches]
+        non_padding_batches = batches[self._num_padding_microbatches :]
 
         if not non_padding_batches:
             raise ValueError("Cannot reorder an empty list of microbatches.")
